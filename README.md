@@ -1,10 +1,10 @@
 # Lightsail-lockdown
 
-Lightsail-lockdown is a trivial utility to modify port access (firewall) rules on AWS Lightsail instances to limit external access to CIDR address blocks provided.
+Lightsail-lockdown is a trivial utility to modify existing port access (firewall) rules on AWS Lightsail instances to limit external access to specific CIDR address blocks.
 
 The intended use case is to allow users with dynamic IP addresses to protect Lightsail instances which do not need to accept incoming connections from the open Internet. This scenario is most likely applicable to Lightsail instances used for educational purposes or as development/test environments.
 
-This tool can be called by [atrack](https://github.com/coridonhenshaw/atrack) to perform automatic updates in dynamic IP environments.
+Lightsail-lockdown can be called by [atrack](https://github.com/coridonhenshaw/atrack) to perform automatic updates in dynamic IP environments.
 
 # Requirements
 
@@ -33,7 +33,7 @@ Parameter | Description
 
 ## Platform Compatibility
 
-Lightsail-lockdown is built on Linux (specifically: OpenSUSE) but should build on any platform supported by Golang.
+Lightsail-lockdown is built on Linux (specifically: OpenSUSE) but should build on any platform supported by Go.
 
 # Release history
 
@@ -41,9 +41,11 @@ Lightsail-lockdown is built on Linux (specifically: OpenSUSE) but should build o
 
 1 - Complete rewrite in Golang to remove external dependencies on the AWS CLI tool.
 
+2 - Updated to use Go modules. Improved handling of Lightsail firewall configurations where different rules are applied to IPv4 and IPv6 connections. Minor code rework for readability.
+
 # License
 
-Copyright 2021 Coridon Henshaw
+Copyright 2021, 2025 Coridon Henshaw
 
 Permission is granted to all natural persons to execute, distribute, and/or modify this software (including its documentation) subject to the following terms:
 

@@ -42,7 +42,11 @@ func LoadConfig() RuntimeConfigStruct {
 		log.Fatal(errors.New("No IPv4 or IPv6 CIDR specified."))
 	}
 
-	if len(RuntimeConfig.AllowedCIDR4) > 0 && RuntimeConfig.AllowedCIDR4 != "none" {
+	if RuntimeConfig.AllowedCIDR4 == "none" {
+		RuntimeConfig.AllowedCIDR4 = ""
+	}
+
+	if len(RuntimeConfig.AllowedCIDR4) > 0 {
 		_, Net4, err := net.ParseCIDR(RuntimeConfig.AllowedCIDR4)
 		if err != nil {
 			log.Fatal(err)
@@ -50,7 +54,11 @@ func LoadConfig() RuntimeConfigStruct {
 		RuntimeConfig.AllowedCIDR4 = Net4.String()
 	}
 
-	if len(RuntimeConfig.AllowedCIDR6) > 0 && RuntimeConfig.AllowedCIDR6 != "none" {
+	if RuntimeConfig.AllowedCIDR6 == "none" {
+		RuntimeConfig.AllowedCIDR6 = ""
+	}
+
+	if len(RuntimeConfig.AllowedCIDR6) > 0 {
 		_, Net6, err := net.ParseCIDR(RuntimeConfig.AllowedCIDR6)
 		if err != nil {
 			log.Fatal(err)
@@ -79,59 +87,79 @@ func GetAllowedPorts(svc *lightsail.Lightsail, Instance string) *lightsail.GetIn
 	return output
 }
 
-func SetAllowedPorts(svc *lightsail.Lightsail, Instance string, Existing *lightsail.GetInstancePortStatesOutput, AllowedCIDR4 string, AllowedCIDR6 string, Dryrun bool) {
+func SetAllowedPorts(svc *lightsail.Lightsail, Instance string, GIPSO *lightsail.GetInstancePortStatesOutput, AllowedCIDR4 string, AllowedCIDR6 string, Dryrun bool) {
 	var err error
-	var Input lightsail.PutInstancePublicPortsInput
-	var InputPorts []*lightsail.PortInfo
+	var PIPPI lightsail.PutInstancePublicPortsInput
+	var PortInfo []*lightsail.PortInfo
 
-	for _, e := range Existing.PortStates {
+	for _, CurrentPortState := range GIPSO.PortStates {
 
-		var PortInfo lightsail.PortInfo
+		var PortInfoEntry lightsail.PortInfo
 
-		PortInfo.SetFromPort(*e.FromPort)
-		PortInfo.SetToPort(*e.ToPort)
-		PortInfo.SetProtocol(*e.Protocol)
+		PortInfoEntry.SetFromPort(*CurrentPortState.FromPort)
+		PortInfoEntry.SetToPort(*CurrentPortState.ToPort)
+		PortInfoEntry.SetProtocol(*CurrentPortState.Protocol)
 
-		if AllowedCIDR4 != "none" {
-			if len(AllowedCIDR4) > 0 {
-				var Dummy []*string
-				Dummy = append(Dummy, &AllowedCIDR4)
-				PortInfo.SetCidrs(Dummy)
-			} else {
-				PortInfo.SetCidrs(e.Cidrs)
+		if len(AllowedCIDR4) > 0 {
+			var Dummy []*string
+			Dummy = append(Dummy, &AllowedCIDR4)
+			PortInfoEntry.SetCidrs(Dummy)
+		} else {
+			if len(CurrentPortState.Ipv6Cidrs) == 0 {
+				continue
 			}
 		}
 
-		if AllowedCIDR6 != "none" {
-			if len(AllowedCIDR6) > 0 {
-				var Dummy []*string
-				Dummy = append(Dummy, &AllowedCIDR6)
-				PortInfo.SetIpv6Cidrs(Dummy)
-			} else {
-				PortInfo.SetIpv6Cidrs(e.Ipv6Cidrs)
+		if len(AllowedCIDR6) > 0 {
+			var Dummy []*string
+			Dummy = append(Dummy, &AllowedCIDR6)
+			PortInfoEntry.SetIpv6Cidrs(Dummy)
+		} else {
+			if len(CurrentPortState.Cidrs) == 0 {
+				continue
 			}
-
-			InputPorts = append(InputPorts, &PortInfo)
 		}
+
+		PortInfo = append(PortInfo, &PortInfoEntry)
 	}
 
-	Input.SetInstanceName(Instance)
-	Input.SetPortInfos(InputPorts)
-	err = Input.Validate()
+	PIPPI.SetInstanceName(Instance)
+	PIPPI.SetPortInfos(PortInfo)
+	err = PIPPI.Validate()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	fmt.Println(&Input)
+	fmt.Println(&PIPPI)
 
 	if Dryrun == false {
-		_, err = svc.PutInstancePublicPorts(&Input)
+		_, err = svc.PutInstancePublicPorts(&PIPPI)
 		if err != nil {
 			log.Fatal(err)
 		}
 	} else {
 		fmt.Println("Dryrun: no update performed.")
 	}
+}
+
+func CompareBlocks(Active []*string, Allowed string) (Update bool) {
+	Open := len(Allowed) > 0
+
+	if Open && len(Active) != 1 {
+		return true
+	} else if Open && len(Active) == 1 {
+		if *Active[0] != Allowed {
+			return true
+		}
+	} else if !Open && len(Active) != 0 {
+		return true
+	} else if !Open && len(Active) == 0 {
+		return false
+	} else {
+		log.Panic("???")
+	}
+
+	return false
 }
 
 func main() {
@@ -156,29 +184,20 @@ func main() {
 		var FromPort int64 = *e.FromPort
 		var ToPort int64 = *e.ToPort
 
-		var Cidrs4 []string
+		var Cidrs []string
 		for _, r := range e.Cidrs {
-			Cidrs4 = append(Cidrs4, *r)
-			if *r != Config.AllowedCIDR4 && len(Config.AllowedCIDR4) > 0 {
-				Update = true
-			}
-		}
-		if len(Config.AllowedCIDR4) > 0 && len(e.Cidrs) == 0 {
-			Update = true
+			Cidrs = append(Cidrs, *r)
 		}
 
 		var Cidrs6 []string
 		for _, r := range e.Ipv6Cidrs {
 			Cidrs6 = append(Cidrs6, *r)
-			if *r != Config.AllowedCIDR6 && len(Config.AllowedCIDR6) > 0 {
-				Update = true
-			}
-		}
-		if len(Config.AllowedCIDR6) > 0 && len(e.Ipv6Cidrs) == 0 {
-			Update = true
 		}
 
-		fmt.Printf(" %5d-%-5d %v %v\n", FromPort, ToPort, Cidrs4, Cidrs6)
+		Update = Update || CompareBlocks(e.Cidrs, Config.AllowedCIDR4)
+		Update = Update || CompareBlocks(e.Ipv6Cidrs, Config.AllowedCIDR6)
+
+		fmt.Printf(" %5d-%-5d %v %v\n", FromPort, ToPort, Cidrs, Cidrs6)
 	}
 
 	if Update == false && Config.Force == false {
@@ -186,7 +205,8 @@ func main() {
 		return
 	}
 
-	fmt.Println("Updating firewall CIDRs to match", Config.AllowedCIDR4)
+	fmt.Println("Updating firewall IPv4 CIDRs to match", Config.AllowedCIDR4)
+	fmt.Println("Updating firewall IPv6 CIDRs to match", Config.AllowedCIDR6)
 
 	SetAllowedPorts(svc, Config.Instance, gipsOutput, Config.AllowedCIDR4, Config.AllowedCIDR6, Config.Dryrun)
 }
